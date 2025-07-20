@@ -61,5 +61,4 @@ fn frag_main(in: Fragment) -> @location(0) vec4<f32> {
 	}
 
 	return vec4<f32>(result, 1.0);
-	//return vec4<f32>(mix(diffuse(l, n), specular(l, v, n), object.metallic) * light.color * light.strength * (1.0 / (r * r + 1.0)), 1.);
 }
