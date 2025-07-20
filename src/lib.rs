@@ -10,7 +10,6 @@ use winit::{
 
 mod pipeline;
 mod scene;
-mod allocator;
 
 use crate::scene::{Scene, InitData};
 use crate::pipeline::{Pipeline};
