@@ -26,9 +26,10 @@ struct Camera {
 	@location(1) view_proj: mat4x4<f32>,
 }
 
-@group(0) @binding(0) var<uniform> lights: array<PointLight, 1>;
-@group(0) @binding(1) var<uniform> camera: Camera;
-@group(0) @binding(2) var<uniform> object: Object;
+@group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(1) var<uniform> object: Object;
+
+@group(1) @binding(0) var<storage> lights: array<PointLight>;
 
 @vertex
 fn vert_main(in: Vertex) -> Fragment {
@@ -52,8 +53,8 @@ fn specular(l: vec3<f32>, v: vec3<f32>, n: vec3<f32>) -> f32 {
 fn frag_main(in: Fragment) -> @location(0) vec4<f32> {
 	let n = normalize(in.normal);
 	var result: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
-	for (var i = 0u; i < 1; i++) {
-		let light = lights[0];
+	for (var i = 0u; i < arrayLength(&lights); i++) {
+		let light = lights[i];
 		let l = normalize(light.position - in.world_pos.xyz);
 		let v = normalize(camera.position - in.world_pos.xyz);
 		let r = distance(light.position, in.world_pos.xyz);

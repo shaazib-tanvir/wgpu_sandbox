@@ -1,6 +1,8 @@
 use log::error;
 use pollster::FutureExt;
 use std::sync::Arc;
+use std::collections::HashMap;
+use std::time;
 use thiserror::Error;
 use winit::{
     application::ApplicationHandler,
@@ -30,35 +32,12 @@ struct RendererState<'window> {
     mesh_pipeline: pipeline::mesh::Mesh,
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
-    // pipeline: wgpu::RenderPipeline,
-    // vertex_buffer: wgpu::Buffer,
-    // bind_group: wgpu::BindGroup,
 }
 
-// #[repr(C)]
-// #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-// struct Vertex {
-//     position: [f32; 3],
-//     color: [f32; 3],
-//     texture_coord: [f32; 2],
-// }
-//
-// impl Vertex {
-//     pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-//         array_stride: size_of::<Self>() as wgpu::BufferAddress,
-//         step_mode: wgpu::VertexStepMode::Vertex,
-//         attributes: &wgpu::vertex_attr_array![
-//             0 => Float32x3,
-//             1 => Float32x3,
-//             2 => Float32x2,
-//         ],
-//     };
-// }
-//
 impl<'window> RendererState<'window> {
     async fn new(window: Arc<Window>, scene: &Scene, init_data: &InitData) -> Result<RendererState<'window>, anyhow::Error> {
         let instance_descriptor = wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL,
+            backends: wgpu::Backends::PRIMARY,
             #[cfg(debug_assertions)]
             flags: wgpu::InstanceFlags::debugging(),
             #[cfg(not(debug_assertions))]
@@ -111,190 +90,6 @@ impl<'window> RendererState<'window> {
         let (depth_texture, depth_texture_view) = Self::create_depth_texture(&device, &config);
 
         let mesh_pipeline = pipeline::mesh::Mesh::new(init_data, scene, &device, &queue, &config);
-        // let image_data = include_bytes!("../assets/dark_mode.png");
-        // let image = image::load_from_memory_with_format(image_data, image::ImageFormat::Png)?;
-        // let image_rgba = image.to_rgba8();
-        // let texture_descriptor = wgpu::TextureDescriptor {
-        //     label: Some("Texture"),
-        //     size: wgpu::Extent3d {
-        //         width: image_rgba.width(),
-        //         height: image_rgba.height(),
-        //         ..Default::default()
-        //     },
-        //     mip_level_count: 1,
-        //     sample_count: 1,
-        //     dimension: wgpu::TextureDimension::D2,
-        //     format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        //     usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        //     view_formats: &[],
-        // };
-        // let texture = device.create_texture(&texture_descriptor);
-        // queue.write_texture(
-        //     wgpu::TexelCopyTextureInfo {
-        //         texture: &texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     &image_rgba,
-        //     wgpu::TexelCopyBufferLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(image_rgba.width() * 4),
-        //         rows_per_image: Some(image_rgba.height()),
-        //     },
-        //     wgpu::Extent3d {
-        //         width: image_rgba.width(),
-        //         height: image_rgba.height(),
-        //         depth_or_array_layers: 1,
-        //     },
-        // );
-        // queue.submit(vec![]);
-        //
-        // let texture_view_descriptor = wgpu::TextureViewDescriptor {
-        //     label: Some("Texture View"),
-        //     format: Some(texture.format()),
-        //     dimension: Some(wgpu::TextureViewDimension::D2),
-        //     usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
-        //     aspect: wgpu::TextureAspect::All,
-        //     base_mip_level: 0,
-        //     mip_level_count: Some(1),
-        //     base_array_layer: 0,
-        //     array_layer_count: None,
-        // };
-        // let texture_view = texture.create_view(&texture_view_descriptor);
-        // let sampler_descriptor = wgpu::SamplerDescriptor {
-        //     label: Some("Sampler"),
-        //     address_mode_u: wgpu::AddressMode::Repeat,
-        //     address_mode_v: wgpu::AddressMode::Repeat,
-        //     compare: None,
-        //     border_color: None,
-        //     mag_filter: wgpu::FilterMode::Nearest,
-        //     min_filter: wgpu::FilterMode::Nearest,
-        //     mipmap_filter: wgpu::FilterMode::Nearest,
-        //     ..Default::default()
-        // };
-        // let sampler = device.create_sampler(&sampler_descriptor);
-        //
-        // let bind_group_layout_descriptor = wgpu::BindGroupLayoutDescriptor {
-        //     label: Some("Bind Group Layout"),
-        //     entries: &[
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 0,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Texture {
-        //                 sample_type: wgpu::TextureSampleType::Float { filterable: false },
-        //                 multisampled: false,
-        //                 view_dimension: wgpu::TextureViewDimension::D2,
-        //             },
-        //             count: None,
-        //         },
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 1,
-        //             visibility: wgpu::ShaderStages::FRAGMENT,
-        //             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-        //             count: None,
-        //         },
-        //     ],
-        // };
-        // let bind_group_layout = device.create_bind_group_layout(&bind_group_layout_descriptor);
-        // let bind_group_descriptor = wgpu::BindGroupDescriptor {
-        //     label: Some("Bind Group"),
-        //     layout: &bind_group_layout,
-        //     entries: &[
-        //         wgpu::BindGroupEntry {
-        //             binding: 0,
-        //             resource: wgpu::BindingResource::TextureView(&texture_view),
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 1,
-        //             resource: wgpu::BindingResource::Sampler(&sampler),
-        //         },
-        //     ],
-        // };
-        // let bind_group = device.create_bind_group(&bind_group_descriptor);
-        //
-        // let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/triangle.wgsl"));
-        //
-        // let color_state_target = [Some(wgpu::ColorTargetState {
-        //     format: config.format,
-        //     blend: Some(wgpu::BlendState::REPLACE),
-        //     write_mask: wgpu::ColorWrites::all(),
-        // })];
-        //
-        // let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor{
-        //     label: Some("Pipeline Layout"),
-        //     bind_group_layouts: &[
-        //         &bind_group_layout
-        //     ],
-        //     push_constant_ranges: &[],
-        // };
-        // let pipeline_layout = device.create_pipeline_layout(&pipeline_layout_descriptor);
-        // let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
-        //     label: Some("Pipeline"),
-        //     layout: Some(&pipeline_layout),
-        //     vertex: wgpu::VertexState {
-        //         module: &shader,
-        //         entry_point: Some("vert_main"),
-        //         compilation_options: Default::default(),
-        //         buffers: &[Vertex::LAYOUT],
-        //     },
-        //     primitive: wgpu::PrimitiveState {
-        //         topology: wgpu::PrimitiveTopology::TriangleList,
-        //         strip_index_format: None,
-        //         front_face: wgpu::FrontFace::Ccw,
-        //         cull_mode: Some(wgpu::Face::Back),
-        //         unclipped_depth: false,
-        //         polygon_mode: wgpu::PolygonMode::Fill,
-        //         conservative: false,
-        //     },
-        //     depth_stencil: None,
-        //     multisample: wgpu::MultisampleState {
-        //         count: 1,
-        //         ..Default::default()
-        //     },
-        //     fragment: Some(wgpu::FragmentState {
-        //         module: &shader,
-        //         entry_point: Some("frag_main"),
-        //         compilation_options: Default::default(),
-        //         targets: &color_state_target,
-        //     }),
-        //     multiview: None,
-        //     cache: None,
-        // };
-        //
-        // let pipeline = device.create_render_pipeline(&render_pipeline_descriptor);
-        //
-        // const VERTICES: &[Vertex] = &[
-        //     Vertex {
-        //         position: [0.0, 0.5, 0.0],
-        //         color: [1.0, 0.0, 0.0],
-        //         texture_coord: [0.0, 0.5],
-        //     },
-        //     Vertex {
-        //         position: [-0.5, -0.5, 0.0],
-        //         color: [0.0, 1.0, 0.0],
-        //         texture_coord: [1.0, 0.0],
-        //     },
-        //     Vertex {
-        //         position: [0.5, -0.5, 0.0],
-        //         color: [0.0, 0.0, 1.0],
-        //         texture_coord: [1.0, 1.0],
-        //     },
-        // ];
-        // let vertex_buffer_descriptor = wgpu::BufferDescriptor {
-        //     label: Some("Vertex Buffer 1"),
-        //     size: (VERTICES.len() * size_of::<Vertex>()) as u64,
-        //     mapped_at_creation: true,
-        //     usage: wgpu::BufferUsages::VERTEX,
-        // };
-        // let vertex_buffer = device.create_buffer(&vertex_buffer_descriptor);
-        // {
-        //     let mut mapped_vertex_buffer =
-        //         vertex_buffer.get_mapped_range_mut(0..vertex_buffer.size());
-        //     mapped_vertex_buffer.copy_from_slice(bytemuck::cast_slice(VERTICES));
-        // }
-        // vertex_buffer.unmap();
-        //
         Ok(RendererState {
             window: window,
             surface: surface,
@@ -305,10 +100,7 @@ impl<'window> RendererState<'window> {
             mesh_pipeline: mesh_pipeline.unwrap(),
             depth_texture: depth_texture,
             depth_texture_view: depth_texture_view
-            // pipeline: pipeline,
-            // vertex_buffer: vertex_buffer,
-            // bind_group: bind_group,
-        })
+       })
     }
 
     fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> (wgpu::Texture, wgpu::TextureView) {
@@ -355,12 +147,9 @@ impl<'window> RendererState<'window> {
             self.depth_texture_view = depth_texture_view;
 
             if scene.is_some() {
-                scene.unwrap().camera.view_proj = (crate::scene::perspective_transform(0.1, 5.0, (self.window.inner_size().width as f32) / (self.window.inner_size().height as f32), 0.75)
-                * cgmath::Matrix4::look_at_lh(
-                    cgmath::Point3::new(0.0, 1.2, -3.0),
-                    cgmath::Point3::new(0.0, 0.0, 0.0),
-                    cgmath::Vector3::unit_y(),
-                )).into();
+                let camera = &mut scene.unwrap().camera;
+                let new_aspect = (self.window.inner_size().width as f32) / (self.window.inner_size().height as f32);
+                camera.update_camera(camera.fov, new_aspect, camera.near, camera.far, camera.direction, camera.position, camera.speed);
             }
         }
     }
@@ -392,38 +181,7 @@ impl<'window> RendererState<'window> {
 
         self.mesh_pipeline.update(scene, &self.device, &self.queue);
         self.mesh_pipeline.draw(&self.device, &mut encoder, &surface_view, &self.depth_texture_view);
-        //
-        // {
-        //     let render_pass_descriptor = wgpu::RenderPassDescriptor {
-        //         label: Some("Render Pass"),
-        //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //             view: &surface_view,
-        //             resolve_target: None,
-        //             ops: wgpu::Operations {
-        //                 load: wgpu::LoadOp::Clear(wgpu::Color {
-        //                     r: 0.003,
-        //                     g: 0.017,
-        //                     b: 0.032,
-        //                     a: 1.,
-        //                 }),
-        //                 store: wgpu::StoreOp::Store,
-        //             },
-        //             depth_slice: None,
-        //         })],
-        //         depth_stencil_attachment: None,
-        //         timestamp_writes: None,
-        //         occlusion_query_set: None,
-        //     };
-        //
-        //     let mut render_pass = encoder.begin_render_pass(&render_pass_descriptor);
-        //     render_pass.set_pipeline(&self.pipeline);
-        //     render_pass.set_bind_group(0, &self.bind_group, &[]);
-        //     render_pass
-        //         .set_vertex_buffer(0, self.vertex_buffer.slice(0..self.vertex_buffer.size()));
-        //     render_pass.draw(0..3, 0..1);
-        // }
-        //
-        let buffer = encoder.finish();
+                let buffer = encoder.finish();
         self.queue.submit(vec![buffer]);
         surface_texture.present();
         Ok(())
@@ -433,11 +191,13 @@ impl<'window> RendererState<'window> {
 pub struct App<'window> {
     state: Option<RendererState<'window>>,
     scene: Option<Scene>,
+    kmap: std::collections::HashMap<winit::keyboard::PhysicalKey, bool>,
+    delta: f32,
 }
 
 impl<'window> App<'window> {
     pub fn new() -> App<'window> {
-        return App { state: None, scene: None };
+        return App { state: None, scene: None, kmap: HashMap::new(), delta: 0.0069 };
     }
 }
 
@@ -456,7 +216,7 @@ impl<'window> ApplicationHandler for App<'window> {
                 }
                 Ok(window) => {
                     let init_data = InitData{
-                        models: vec![load_model!("../assets/cube.obj").unwrap()]
+                        models: vec![load_model!("../assets/cube.obj").unwrap(), load_model!("../assets/monkey.obj").unwrap()]
                     };
                     let scene = Scene::new((window.inner_size().width as f32) / (window.inner_size().height as f32), cgmath::Point3::new(0.0, 1.2, -3.0));
                     let state = RendererState::new(Arc::new(window), &scene, &init_data).block_on();
@@ -481,16 +241,19 @@ impl<'window> ApplicationHandler for App<'window> {
         _id: WindowId,
         event: winit::event::WindowEvent,
     ) {
+        let instant;
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
                 return;
             }
             WindowEvent::RedrawRequested => {
+                instant = time::Instant::now();
                 if self.state.is_none() || self.scene.is_none() {
                     return;
                 }
 
+                self.scene.as_mut().unwrap().update(&self.kmap, self.delta);
                 match self.state.as_ref().unwrap().render(&self.scene.as_ref().unwrap()) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
@@ -505,6 +268,10 @@ impl<'window> ApplicationHandler for App<'window> {
                         error!("an error occured while rendering: {}", err);
                     }
                 }
+
+                let current = time::Instant::now();
+                let delta_duration = current.duration_since(instant);
+                self.delta = delta_duration.as_secs_f32();
             }
             WindowEvent::Resized(new_size) => {
                 if self.state.is_none() {
@@ -513,6 +280,16 @@ impl<'window> ApplicationHandler for App<'window> {
 
                 let state = self.state.as_mut().unwrap();
                 state.resize(new_size.width, new_size.height, self.scene.as_mut());
+            }
+            WindowEvent::KeyboardInput {device_id: _, event, is_synthetic: _} => {
+                match event.state {
+                    winit::event::ElementState::Pressed => {
+                        self.kmap.insert(event.physical_key.clone(), true);
+                    }
+                    winit::event::ElementState::Released => {
+                        self.kmap.insert(event.physical_key.clone(), false);
+                    }
+                }
             }
             _ => (),
         }
