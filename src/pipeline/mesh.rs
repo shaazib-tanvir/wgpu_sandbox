@@ -1,4 +1,4 @@
-use super::{create_uniform_buffer, create_storage_buffer, Pipeline};
+use super::{Pipeline, create_storage_buffer, create_uniform_buffer};
 use std::iter::zip;
 
 use crate::scene::{InitData, Scene};
@@ -105,7 +105,8 @@ impl Pipeline for Mesh {
         let uniform_group_layout =
             device.create_bind_group_layout(&uniform_group_layout_descriptor);
 
-        let lights_buffer = create_storage_buffer::<PointLight>(device, Some(scene.lights.len() as u64));
+        let lights_buffer =
+            create_storage_buffer::<PointLight>(device, Some(scene.lights.len() as u64));
         let camera_buffer = create_uniform_buffer::<Camera>(device, None);
         let mut object_buffers = Vec::new();
         for _ in &scene.objects {
@@ -137,32 +138,29 @@ impl Pipeline for Mesh {
             uniform_groups.push(uniform_group);
         }
 
-        let storage_group_layout_descriptor = wgpu::BindGroupLayoutDescriptor{
+        let storage_group_layout_descriptor = wgpu::BindGroupLayoutDescriptor {
             label: Some("Mesh Storage Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry{
+            entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage {
-                        read_only: true,
-                    },
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
                 count: None,
-            }]
+            }],
         };
-        let storage_group_layout = device.create_bind_group_layout(&storage_group_layout_descriptor);
+        let storage_group_layout =
+            device.create_bind_group_layout(&storage_group_layout_descriptor);
 
         let storage_group_descriptor = wgpu::BindGroupDescriptor {
             label: Some("Mesh Storage Bind Group"),
             layout: &storage_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(lights_buffer.as_entire_buffer_binding()),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(lights_buffer.as_entire_buffer_binding()),
+            }],
         };
         let storage_group = device.create_bind_group(&storage_group_descriptor);
 
@@ -220,7 +218,7 @@ impl Pipeline for Mesh {
         };
 
         let light_count = scene.lights.len() as f64;
-        let compilation_options = wgpu::PipelineCompilationOptions{
+        let compilation_options = wgpu::PipelineCompilationOptions {
             constants: &[("0", light_count)],
             ..Default::default()
         };
@@ -278,7 +276,11 @@ impl Pipeline for Mesh {
             0,
             bytemuck::cast_slice(scene.lights.as_slice()),
         );
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&scene.camera.mesh_camera));
+        queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::bytes_of(&scene.camera.mesh_camera),
+        );
         for (object, object_buffer) in zip(
             scene.objects.iter().as_ref(),
             self.object_buffers.iter().as_ref(),
