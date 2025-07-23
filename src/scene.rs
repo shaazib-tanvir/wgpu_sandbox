@@ -1,5 +1,6 @@
 use crate::pipeline::*;
-use cgmath::InnerSpace;
+
+use cgmath::{InnerSpace, Quaternion, Rotation3, Transform};
 use std::collections::HashMap;
 use winit::keyboard::*;
 
@@ -63,13 +64,15 @@ macro_rules! load_model {
 
 pub struct Camera {
     pub mesh_camera: mesh::Camera,
+    pub view: cgmath::Matrix4<f32>,
+    pub projection: cgmath::Matrix4<f32>,
     pub position: cgmath::Point3<f32>,
-    pub direction: cgmath::Vector3<f32>,
     pub fov: f32,
     pub aspect: f32,
     pub near: f32,
     pub far: f32,
     pub speed: f32,
+    pub rot_rate: f32,
 }
 
 impl Camera {
@@ -81,72 +84,55 @@ impl Camera {
         direction: cgmath::Vector3<f32>,
         position: cgmath::Point3<f32>,
         speed: f32,
+        rot_rate: f32,
     ) -> Camera {
         let target = cgmath::Point3::new(
             position.x + direction.x,
             position.y + direction.y,
             position.z + direction.z,
         );
+        let view = cgmath::Matrix4::look_at_lh(position, target, cgmath::Vector3::unit_y());
+        let projection = perspective_transform(near, far, aspect, fov);
         return Camera {
             mesh_camera: mesh::Camera {
                 position: position.into(),
                 _padding: 0.0,
-                view_proj: (perspective_transform(near, far, aspect, fov)
-                    * cgmath::Matrix4::look_at_lh(position, target, cgmath::Vector3::unit_y()))
-                .into(),
+                view_proj: (projection * view).into(),
             },
+            view: view,
+            projection: projection,
             position: position,
-            direction: direction,
             fov: fov,
             aspect: aspect,
             near: near,
             far: far,
             speed: speed,
+            rot_rate: rot_rate,
         };
     }
 
-    pub fn update_camera(
+    pub fn update(
         &mut self,
         fov: f32,
         aspect: f32,
         near: f32,
         far: f32,
-        direction: cgmath::Vector3<f32>,
-        position: cgmath::Point3<f32>,
         speed: f32,
+        rot_rate: f32,
     ) {
-        let target = cgmath::Point3::new(
-            position.x + direction.x,
-            position.y + direction.y,
-            position.z + direction.z,
-        );
+        self.projection = perspective_transform(near, far, aspect, fov);
         let mesh_camera = mesh::Camera {
-            position: position.into(),
+            position: self.position.into(),
             _padding: 0.0,
-            view_proj: (perspective_transform(near, far, aspect, fov)
-                * cgmath::Matrix4::look_at_lh(position, target, cgmath::Vector3::unit_y()))
-            .into(),
+            view_proj: (self.projection * self.view).into(),
         };
         self.mesh_camera = mesh_camera;
         self.near = near;
         self.far = far;
         self.fov = fov;
         self.aspect = aspect;
-        self.position = position;
-        self.direction = direction;
         self.speed = speed;
-    }
-
-    pub fn move_camera(&mut self, new_position: cgmath::Point3<f32>) {
-        self.update_camera(
-            self.fov,
-            self.aspect,
-            self.near,
-            self.far,
-            self.direction,
-            new_position,
-            self.speed,
-        );
+        self.rot_rate = rot_rate;
     }
 }
 
@@ -171,7 +157,16 @@ impl Scene {
         let direction =
             cgmath::Vector3::new(-camera_position.x, -camera_position.y, -camera_position.z)
                 .normalize();
-        let camera = Camera::new(0.75, aspect, 0.1, 10.0, direction, camera_position, 2.5);
+        let camera = Camera::new(
+            0.75,
+            aspect,
+            0.1,
+            10.0,
+            direction,
+            camera_position,
+            2.5,
+            0.4,
+        );
 
         return Scene {
             objects: vec![
@@ -223,7 +218,16 @@ impl Scene {
             .is_some_and(|pressed| pressed.clone());
     }
 
-    pub fn update(&mut self, kmap: &HashMap<PhysicalKey, bool>, delta: f32) {
+    fn extract_rotation<S: Copy>(matrix: &cgmath::Matrix4<S>) -> cgmath::Matrix3<S> {
+        return cgmath::Matrix3::new(matrix.x.x, matrix.x.y, matrix.x.z, matrix.y.x, matrix.y.y, matrix.y.z, matrix.z.x, matrix.z.y, matrix.z.z);
+    }
+
+    pub fn update(
+        &mut self,
+        kmap: &HashMap<PhysicalKey, bool>,
+        mouse_movements: &mut Vec<(f32, f32)>,
+        delta: f32,
+    ) {
         let forward_pressed = Self::check_key(&kmap, KeyCode::KeyW);
         let backwards_pressed = Self::check_key(&kmap, KeyCode::KeyS);
         let right_pressed = Self::check_key(&kmap, KeyCode::KeyD);
@@ -231,15 +235,32 @@ impl Scene {
 
         let forward_axis = ((forward_pressed as i32) - (backwards_pressed as i32)) as f32;
         let side_axis = ((right_pressed as i32) - (left_pressed as i32)) as f32;
-        let right_direction = cgmath::Vector3::unit_y().cross(self.camera.direction);
+
         let displacement = delta
             * self.camera.speed
-            * (forward_axis * self.camera.direction + right_direction * side_axis);
-        let new_position = cgmath::Point3::new(
-            displacement.x + self.camera.position.x,
-            displacement.y + self.camera.position.y,
-            displacement.z + self.camera.position.z,
+            * ((-forward_axis * cgmath::Vector3::unit_z())
+                + (-side_axis * cgmath::Vector3::unit_x()));
+        let mut total_movement = (0.0, 0.0);
+        for movement in mouse_movements.iter() {
+            total_movement = (movement.0 + total_movement.0, movement.1 + total_movement.1);
+        }
+        mouse_movements.clear();
+        let local_rotation = Quaternion::from_axis_angle(
+            cgmath::Vector3::unit_x(),
+            cgmath::Rad(-self.camera.rot_rate * total_movement.1 * delta),
         );
-        self.camera.move_camera(new_position);
+
+        let world_y = <cgmath::Matrix3<f32> as Transform<cgmath::Point3<f32>>>::transform_vector(&Self::extract_rotation(&self.camera.view), cgmath::Vector3::unit_y());
+        let world_y = world_y.normalize();
+        let global_rotation = Quaternion::from_axis_angle(
+            world_y,
+            cgmath::Rad(-self.camera.rot_rate * total_movement.0 * delta),
+        );
+
+        self.camera.view = cgmath::Matrix4::from_translation(displacement)
+            * Into::<cgmath::Matrix4<f32>>::into(local_rotation)
+            * Into::<cgmath::Matrix4<f32>>::into(global_rotation)
+            * self.camera.view;
+        self.camera.mesh_camera.view_proj = (self.camera.projection * self.camera.view).into();
     }
 }

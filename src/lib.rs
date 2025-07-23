@@ -1,20 +1,22 @@
 use log::error;
 use pollster::FutureExt;
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time;
 use thiserror::Error;
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent, event_loop::ActiveEventLoop,
+    event::WindowEvent,
+    event_loop::ActiveEventLoop,
+    keyboard::*,
     window::{Window, WindowId},
 };
 
 mod pipeline;
 mod scene;
 
-use crate::scene::{Scene, InitData};
-use crate::pipeline::{Pipeline};
+use crate::pipeline::Pipeline;
+use crate::scene::{InitData, Scene};
 
 #[derive(Error, Debug)]
 enum FormatError {
@@ -35,7 +37,11 @@ struct RendererState<'window> {
 }
 
 impl<'window> RendererState<'window> {
-    async fn new(window: Arc<Window>, scene: &Scene, init_data: &InitData) -> Result<RendererState<'window>, anyhow::Error> {
+    async fn new(
+        window: Arc<Window>,
+        scene: &Scene,
+        init_data: &InitData,
+    ) -> Result<RendererState<'window>, anyhow::Error> {
         let instance_descriptor = wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             #[cfg(debug_assertions)]
@@ -99,12 +105,15 @@ impl<'window> RendererState<'window> {
             is_surface_configured: false,
             mesh_pipeline: mesh_pipeline.unwrap(),
             depth_texture: depth_texture,
-            depth_texture_view: depth_texture_view
-       })
+            depth_texture_view: depth_texture_view,
+        })
     }
 
-    fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> (wgpu::Texture, wgpu::TextureView) {
-        let texture_descriptor = wgpu::TextureDescriptor{
+    fn create_depth_texture(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
+        let texture_descriptor = wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
             size: wgpu::Extent3d {
                 width: config.width,
@@ -120,7 +129,7 @@ impl<'window> RendererState<'window> {
         };
         let texture = device.create_texture(&texture_descriptor);
 
-        let view_descriptor = wgpu::TextureViewDescriptor{
+        let view_descriptor = wgpu::TextureViewDescriptor {
             label: Some("Depth Texture View"),
             base_mip_level: 0,
             mip_level_count: None,
@@ -142,14 +151,23 @@ impl<'window> RendererState<'window> {
             self.surface_config.width = width;
             self.surface_config.height = height;
             self.surface.configure(&self.device, &self.surface_config);
-            let (depth_texture, depth_texture_view) = RendererState::create_depth_texture(&self.device, &self.surface_config);
+            let (depth_texture, depth_texture_view) =
+                RendererState::create_depth_texture(&self.device, &self.surface_config);
             self.depth_texture = depth_texture;
             self.depth_texture_view = depth_texture_view;
 
             if scene.is_some() {
                 let camera = &mut scene.unwrap().camera;
-                let new_aspect = (self.window.inner_size().width as f32) / (self.window.inner_size().height as f32);
-                camera.update_camera(camera.fov, new_aspect, camera.near, camera.far, camera.direction, camera.position, camera.speed);
+                let new_aspect = (self.window.inner_size().width as f32)
+                    / (self.window.inner_size().height as f32);
+                camera.update(
+                    camera.fov,
+                    new_aspect,
+                    camera.near,
+                    camera.far,
+                    camera.speed,
+                    camera.rot_rate,
+                );
             }
         }
     }
@@ -177,11 +195,17 @@ impl<'window> RendererState<'window> {
             ..Default::default()
         };
         let surface_view = surface_texture
-            .texture.create_view(&surface_view_descriptor);
+            .texture
+            .create_view(&surface_view_descriptor);
 
         self.mesh_pipeline.update(scene, &self.device, &self.queue);
-        self.mesh_pipeline.draw(&self.device, &mut encoder, &surface_view, &self.depth_texture_view);
-                let buffer = encoder.finish();
+        self.mesh_pipeline.draw(
+            &self.device,
+            &mut encoder,
+            &surface_view,
+            &self.depth_texture_view,
+        );
+        let buffer = encoder.finish();
         self.queue.submit(vec![buffer]);
         surface_texture.present();
         Ok(())
@@ -191,13 +215,20 @@ impl<'window> RendererState<'window> {
 pub struct App<'window> {
     state: Option<RendererState<'window>>,
     scene: Option<Scene>,
-    kmap: std::collections::HashMap<winit::keyboard::PhysicalKey, bool>,
+    kmap: HashMap<PhysicalKey, bool>,
+    mouse_movements: Vec<(f32, f32)>,
     delta: f32,
 }
 
 impl<'window> App<'window> {
     pub fn new() -> App<'window> {
-        return App { state: None, scene: None, kmap: HashMap::new(), delta: 0.0069 };
+        return App {
+            state: None,
+            scene: None,
+            kmap: HashMap::new(),
+            mouse_movements: Vec::new(),
+            delta: 0.0069,
+        };
     }
 }
 
@@ -215,10 +246,16 @@ impl<'window> ApplicationHandler for App<'window> {
                     event_loop.exit();
                 }
                 Ok(window) => {
-                    let init_data = InitData{
-                        models: vec![load_model!("../assets/cube.obj").unwrap(), load_model!("../assets/monkey.obj").unwrap()]
+                    let init_data = InitData {
+                        models: vec![
+                            load_model!("../assets/cube.obj").unwrap(),
+                            load_model!("../assets/monkey.obj").unwrap(),
+                        ],
                     };
-                    let scene = Scene::new((window.inner_size().width as f32) / (window.inner_size().height as f32), cgmath::Point3::new(0.0, 1.2, -3.0));
+                    let scene = Scene::new(
+                        (window.inner_size().width as f32) / (window.inner_size().height as f32),
+                        cgmath::Point3::new(0.0, 1.2, -3.0),
+                    );
                     let state = RendererState::new(Arc::new(window), &scene, &init_data).block_on();
                     match state {
                         Ok(state) => {
@@ -232,6 +269,20 @@ impl<'window> ApplicationHandler for App<'window> {
                     }
                 }
             }
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        match event {
+            winit::event::DeviceEvent::MouseMotion { delta } => {
+                self.mouse_movements.push((delta.0 as f32, delta.1 as f32));
+            }
+            _ => {}
         }
     }
 
@@ -253,8 +304,17 @@ impl<'window> ApplicationHandler for App<'window> {
                     return;
                 }
 
-                self.scene.as_mut().unwrap().update(&self.kmap, self.delta);
-                match self.state.as_ref().unwrap().render(&self.scene.as_ref().unwrap()) {
+                self.scene.as_mut().unwrap().update(
+                    &self.kmap,
+                    &mut self.mouse_movements,
+                    self.delta,
+                );
+                match self
+                    .state
+                    .as_ref()
+                    .unwrap()
+                    .render(&self.scene.as_ref().unwrap())
+                {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
                         let state = self.state.as_mut().unwrap();
@@ -281,16 +341,18 @@ impl<'window> ApplicationHandler for App<'window> {
                 let state = self.state.as_mut().unwrap();
                 state.resize(new_size.width, new_size.height, self.scene.as_mut());
             }
-            WindowEvent::KeyboardInput {device_id: _, event, is_synthetic: _} => {
-                match event.state {
-                    winit::event::ElementState::Pressed => {
-                        self.kmap.insert(event.physical_key.clone(), true);
-                    }
-                    winit::event::ElementState::Released => {
-                        self.kmap.insert(event.physical_key.clone(), false);
-                    }
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                event,
+                is_synthetic: _,
+            } => match event.state {
+                winit::event::ElementState::Pressed => {
+                    self.kmap.insert(event.physical_key.clone(), true);
                 }
-            }
+                winit::event::ElementState::Released => {
+                    self.kmap.insert(event.physical_key.clone(), false);
+                }
+            },
             _ => (),
         }
     }
