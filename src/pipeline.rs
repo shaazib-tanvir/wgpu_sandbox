@@ -11,7 +11,7 @@ pub trait Pipeline: Sized {
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Result<Self, Self::E>;
-    fn update(&self, scene: &Scene, device: &wgpu::Device, queue: &wgpu::Queue);
+    fn update(&self, scene: &mut Scene, device: &wgpu::Device, queue: &wgpu::Queue);
     fn draw(
         &self,
         device: &wgpu::Device,
@@ -22,8 +22,9 @@ pub trait Pipeline: Sized {
 }
 
 pub fn create_uniform_buffer<T>(device: &wgpu::Device, count: Option<u64>) -> wgpu::Buffer {
+    let label = format!("{} Buffer", std::any::type_name::<T>());
     let buffer_descriptor = wgpu::BufferDescriptor {
-        label: None,
+        label: Some(&label),
         size: match count {
             None => std::mem::size_of::<T>() as u64,
             Some(count) => (std::mem::size_of::<T>() as u64) * count,
@@ -36,8 +37,9 @@ pub fn create_uniform_buffer<T>(device: &wgpu::Device, count: Option<u64>) -> wg
 }
 
 pub fn create_storage_buffer<T>(device: &wgpu::Device, count: Option<u64>) -> wgpu::Buffer {
+    let label = format!("{} Buffer", std::any::type_name::<T>());
     let buffer_descriptor = wgpu::BufferDescriptor {
-        label: None,
+        label: Some(&label),
         size: match count {
             None => std::mem::size_of::<T>() as u64,
             Some(count) => (std::mem::size_of::<T>() as u64) * count,
