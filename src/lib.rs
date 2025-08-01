@@ -12,6 +12,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
+mod cache;
 mod pipeline;
 mod scene;
 
@@ -160,19 +161,19 @@ impl<'window> RendererState<'window> {
                 let camera = &mut scene.unwrap().camera;
                 let new_aspect = (self.window.inner_size().width as f32)
                     / (self.window.inner_size().height as f32);
-                camera.update(
-                    camera.fov,
+                camera.value.update(
+                    camera.value.fov,
                     new_aspect,
-                    camera.near,
-                    camera.far,
-                    camera.speed,
-                    camera.rot_rate,
+                    camera.value.near,
+                    camera.value.far,
+                    camera.value.speed,
+                    camera.value.rot_rate,
                 );
             }
         }
     }
 
-    fn render(&self, scene: &Scene) -> Result<(), wgpu::SurfaceError> {
+    fn render(&self, scene: &mut Scene) -> Result<(), wgpu::SurfaceError> {
         self.window.request_redraw();
 
         if !self.is_surface_configured {
@@ -250,6 +251,7 @@ impl<'window> ApplicationHandler for App<'window> {
                         models: vec![
                             load_model!("../assets/cube.obj").unwrap(),
                             load_model!("../assets/monkey.obj").unwrap(),
+                            load_model!("../assets/plane.obj").unwrap(),
                         ],
                     };
                     let scene = Scene::new(
@@ -313,7 +315,7 @@ impl<'window> ApplicationHandler for App<'window> {
                     .state
                     .as_ref()
                     .unwrap()
-                    .render(&self.scene.as_ref().unwrap())
+                    .render(self.scene.as_mut().unwrap())
                 {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
