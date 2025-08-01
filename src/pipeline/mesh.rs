@@ -22,6 +22,17 @@ pub struct PointLight {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DirectionalLight {
+    pub position: [f32; 3],
+    pub _padding0: f32,
+    pub direction: [f32; 3],
+    pub _padding1: f32,
+    pub color: [f32; 3],
+    pub strength: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Object {
     pub model: [[f32; 4]; 4],
     pub metallic: f32,
@@ -52,7 +63,8 @@ pub struct Mesh {
     pipeline: wgpu::RenderPipeline,
     uniform_groups: Vec<wgpu::BindGroup>,
     storage_group: wgpu::BindGroup,
-    lights_buffer: wgpu::Buffer,
+    point_lights_buffer: wgpu::Buffer,
+    directional_lights_buffer: wgpu::Buffer,
     camera_buffer: wgpu::Buffer,
     object_buffers: Vec<wgpu::Buffer>,
     vertex_buffers: Vec<wgpu::Buffer>,
@@ -105,11 +117,13 @@ impl Pipeline for Mesh {
         let uniform_group_layout =
             device.create_bind_group_layout(&uniform_group_layout_descriptor);
 
-        let lights_buffer =
-            create_storage_buffer::<PointLight>(device, Some(scene.lights.len() as u64));
+        let point_lights_buffer =
+            create_storage_buffer::<PointLight>(device, Some(scene.point_lights.values.len() as u64));
+        let directional_lights_buffer =
+            create_storage_buffer::<DirectionalLight>(device, Some(scene.directional_lights.values.len() as u64));
         let camera_buffer = create_uniform_buffer::<Camera>(device, None);
         let mut object_buffers = Vec::new();
-        for _ in &scene.objects {
+        for _ in &scene.objects.values {
             let object_buffer = create_uniform_buffer::<Object>(device, None);
             object_buffers.push(object_buffer);
         }
@@ -149,6 +163,15 @@ impl Pipeline for Mesh {
                     min_binding_size: None,
                 },
                 count: None,
+            }, wgpu::BindGroupLayoutEntry{
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             }],
         };
         let storage_group_layout =
@@ -159,7 +182,10 @@ impl Pipeline for Mesh {
             layout: &storage_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(lights_buffer.as_entire_buffer_binding()),
+                resource: wgpu::BindingResource::Buffer(point_lights_buffer.as_entire_buffer_binding()),
+            }, wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Buffer(directional_lights_buffer.as_entire_buffer_binding()),
             }],
         };
         let storage_group = device.create_bind_group(&storage_group_descriptor);
@@ -217,9 +243,7 @@ impl Pipeline for Mesh {
             },
         };
 
-        let light_count = scene.lights.len() as f64;
         let compilation_options = wgpu::PipelineCompilationOptions {
-            constants: &[("0", light_count)],
             ..Default::default()
         };
         let pipeline_descriptor = wgpu::RenderPipelineDescriptor {
@@ -261,7 +285,8 @@ impl Pipeline for Mesh {
             pipeline: pipeline,
             camera_buffer: camera_buffer,
             object_buffers: object_buffers,
-            lights_buffer: lights_buffer,
+            point_lights_buffer,
+            directional_lights_buffer,
             uniform_groups: uniform_groups,
             storage_group: storage_group,
             vertex_buffers: vertex_buffers,
@@ -270,22 +295,39 @@ impl Pipeline for Mesh {
         });
     }
 
-    fn update(&self, scene: &Scene, _device: &wgpu::Device, queue: &wgpu::Queue) {
-        queue.write_buffer(
-            &self.lights_buffer,
-            0,
-            bytemuck::cast_slice(scene.lights.as_slice()),
-        );
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::bytes_of(&scene.camera.mesh_camera),
-        );
-        for (object, object_buffer) in zip(
-            scene.objects.iter().as_ref(),
-            self.object_buffers.iter().as_ref(),
-        ) {
-            queue.write_buffer(object_buffer, 0, bytemuck::bytes_of(object));
+    fn update(&self, scene: &mut Scene, _device: &wgpu::Device, queue: &wgpu::Queue) {
+        if scene.point_lights.is_dirty() {
+            queue.write_buffer(
+                &self.point_lights_buffer,
+                0,
+                bytemuck::cast_slice(scene.point_lights.values.as_slice()),
+            );
+            scene.point_lights.clear();
+        }
+        if scene.directional_lights.is_dirty() {
+            queue.write_buffer(
+                &self.directional_lights_buffer,
+                0,
+                bytemuck::cast_slice(scene.directional_lights.values.as_slice()),
+            );
+            scene.directional_lights.clear();
+        }
+        if scene.camera.is_dirty() {
+            queue.write_buffer(
+                &self.camera_buffer,
+                0,
+                bytemuck::bytes_of(&scene.camera.value.mesh_camera),
+            );
+            scene.camera.clear();
+        }
+        if scene.objects.is_dirty() {
+            for (object, object_buffer) in zip(
+                scene.objects.values.iter().as_ref(),
+                self.object_buffers.iter().as_ref(),
+            ) {
+                queue.write_buffer(object_buffer, 0, bytemuck::bytes_of(object));
+            }
+            scene.objects.clear();
         }
     }
 

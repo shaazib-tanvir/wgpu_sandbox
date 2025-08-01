@@ -1,4 +1,5 @@
 use crate::pipeline::*;
+use crate::cache::{Cache, VecCache};
 
 use cgmath::{InnerSpace, Quaternion, Rotation3, Transform};
 use std::collections::HashMap;
@@ -137,9 +138,10 @@ impl Camera {
 }
 
 pub struct Scene {
-    pub objects: Vec<mesh::Object>,
-    pub lights: Vec<mesh::PointLight>,
-    pub camera: Camera,
+    pub objects: VecCache<mesh::Object>,
+    pub point_lights: VecCache<mesh::PointLight>,
+    pub directional_lights: VecCache<mesh::DirectionalLight>,
+    pub camera: Cache<Camera>,
 }
 
 pub fn perspective_transform(near: f32, far: f32, aspect: f32, fov: f32) -> cgmath::Matrix4<f32> {
@@ -161,7 +163,7 @@ impl Scene {
             0.75,
             aspect,
             0.1,
-            10.0,
+            100.0,
             direction,
             camera_position,
             2.5,
@@ -169,20 +171,21 @@ impl Scene {
         );
 
         return Scene {
-            objects: vec![
+            objects: VecCache::new(vec![
                 mesh::Object {
-                    model: (cgmath::Matrix4::from_cols(
-                        cgmath::Vector4::new(-1.0, 0.0, 0.0, 0.0),
-                        cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
-                        cgmath::Vector4::new(0.0, 0.0, 1.0, 0.0),
-                        cgmath::Vector4::new(0.0, 0.0, 0.0, 1.0),
-                    ))
+                    model: (cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 1.0, 0.))
+                        * cgmath::Matrix4::from_cols(
+                            cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
+                            cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
+                            cgmath::Vector4::new(0.0, 0.0, -1.0, 0.0),
+                            cgmath::Vector4::new(0.0, 0.0, 0.0, 1.0),
+                        ))
                     .into(),
                     metallic: 0.5,
                     _padding: [0.0, 0.0, 0.0],
                 },
                 mesh::Object {
-                    model: (cgmath::Matrix4::from_translation(cgmath::Vector3::new(1.0, 0.2, 2.))
+                    model: (cgmath::Matrix4::from_translation(cgmath::Vector3::new(1.0, 1.0, 2.))
                         * cgmath::Matrix4::from_cols(
                             cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
                             cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
@@ -193,22 +196,36 @@ impl Scene {
                     metallic: 0.8,
                     _padding: [0.0, 0.0, 0.0],
                 },
-            ],
-            lights: vec![
+                mesh::Object {
+                    model: (cgmath::Matrix4::from_scale(100.0) * cgmath::Matrix4::from_cols(
+                            cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
+                            cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
+                            cgmath::Vector4::new(0.0, 0.0, -1.0, 0.0),
+                            cgmath::Vector4::new(0.0, 0.0, 0.0, 1.0)))
+                    .into(),
+                    metallic: 0.0,
+                    _padding: [0.0, 0.0, 0.0],
+                }
+            ]),
+            point_lights: VecCache::new(vec![
                 mesh::PointLight {
-                    position: [1.0, 2.0, -1.0],
-                    color: [1.0, 1.0, 0.0],
-                    strength: 2.5,
+                    position: [0.0, 2.0, -2.0],
+                    color: [1.0, 1.0, 1.0],
+                    strength: 0.0,
                     _padding0: 0.0,
                 },
-                mesh::PointLight {
-                    position: [-1.0, 2.0, -2.0],
-                    color: [0.0, 1.0, 1.0],
-                    strength: 3.5,
+            ]),
+            directional_lights: VecCache::new(vec![
+                mesh::DirectionalLight {
+                    position: [0.0, 2.0, -2.0],
+                    color: [1.0, 1.0, 1.0],
+                    direction: [0.0, -0.707, 0.707],
+                    strength: 5.0,
                     _padding0: 0.0,
-                },
-            ],
-            camera: camera,
+                    _padding1: 0.0,
+                }
+            ]),
+            camera: Cache::new(camera),
         };
     }
 
@@ -219,7 +236,10 @@ impl Scene {
     }
 
     fn extract_rotation<S: Copy>(matrix: &cgmath::Matrix4<S>) -> cgmath::Matrix3<S> {
-        return cgmath::Matrix3::new(matrix.x.x, matrix.x.y, matrix.x.z, matrix.y.x, matrix.y.y, matrix.y.z, matrix.z.x, matrix.z.y, matrix.z.z);
+        return cgmath::Matrix3::new(
+            matrix.x.x, matrix.x.y, matrix.x.z, matrix.y.x, matrix.y.y, matrix.y.z, matrix.z.x,
+            matrix.z.y, matrix.z.z,
+        );
     }
 
     pub fn update(
@@ -237,7 +257,7 @@ impl Scene {
         let side_axis = ((right_pressed as i32) - (left_pressed as i32)) as f32;
 
         let displacement = delta
-            * self.camera.speed
+            * self.camera.value.speed
             * ((-forward_axis * cgmath::Vector3::unit_z())
                 + (-side_axis * cgmath::Vector3::unit_x()));
         let mut total_movement = (0.0, 0.0);
@@ -247,20 +267,24 @@ impl Scene {
         mouse_movements.clear();
         let local_rotation = Quaternion::from_axis_angle(
             cgmath::Vector3::unit_x(),
-            cgmath::Rad(-self.camera.rot_rate * total_movement.1 * delta),
+            cgmath::Rad(-self.camera.value.rot_rate * total_movement.1 * delta),
         );
 
-        let world_y = <cgmath::Matrix3<f32> as Transform<cgmath::Point3<f32>>>::transform_vector(&Self::extract_rotation(&self.camera.view), cgmath::Vector3::unit_y());
+        let world_y = <cgmath::Matrix3<f32> as Transform<cgmath::Point3<f32>>>::transform_vector(
+            &Self::extract_rotation(&self.camera.value.view),
+            cgmath::Vector3::unit_y(),
+        );
         let world_y = world_y.normalize();
         let global_rotation = Quaternion::from_axis_angle(
             world_y,
-            cgmath::Rad(-self.camera.rot_rate * total_movement.0 * delta),
+            cgmath::Rad(-self.camera.value.rot_rate * total_movement.0 * delta),
         );
 
-        self.camera.view = cgmath::Matrix4::from_translation(displacement)
+        self.camera.value.view = cgmath::Matrix4::from_translation(displacement)
             * Into::<cgmath::Matrix4<f32>>::into(local_rotation)
             * Into::<cgmath::Matrix4<f32>>::into(global_rotation)
-            * self.camera.view;
-        self.camera.mesh_camera.view_proj = (self.camera.projection * self.camera.view).into();
+            * self.camera.value.view;
+        self.camera.value.mesh_camera.view_proj = (self.camera.value.projection * self.camera.value.view).into();
+        self.camera.dirty = true;
     }
 }

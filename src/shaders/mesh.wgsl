@@ -16,6 +16,13 @@ struct PointLight {
 	@location(2) strength: f32,
 }
 
+struct DirectionalLight {
+	@location(0) position: vec3<f32>,
+	@location(1) direction: vec3<f32>,
+	@location(2) color: vec3<f32>,
+	@location(3) strength: f32,
+}
+
 struct Object {
 	@location(0) model: mat4x4<f32>,
 	@location(2) metallic: f32,
@@ -29,7 +36,8 @@ struct Camera {
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<uniform> object: Object;
 
-@group(1) @binding(0) var<storage> lights: array<PointLight>;
+@group(1) @binding(0) var<storage> point_lights: array<PointLight>;
+@group(1) @binding(1) var<storage> directional_lights: array<DirectionalLight>;
 
 @vertex
 fn vert_main(in: Vertex) -> Fragment {
@@ -53,9 +61,17 @@ fn specular(l: vec3<f32>, v: vec3<f32>, n: vec3<f32>) -> f32 {
 fn frag_main(in: Fragment) -> @location(0) vec4<f32> {
 	let n = normalize(in.normal);
 	var result: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
-	for (var i = 0u; i < arrayLength(&lights); i++) {
-		let light = lights[i];
+	for (var i = 0u; i < arrayLength(&point_lights); i++) {
+		let light = point_lights[i];
 		let l = normalize(light.position - in.world_pos.xyz);
+		let v = normalize(camera.position - in.world_pos.xyz);
+		let r = distance(light.position, in.world_pos.xyz);
+		result += mix(diffuse(l, n), specular(l, v, n), object.metallic) * light.color * light.strength * (1.0 / (r * r + 1.0));
+	}
+
+	for (var i = 0u; i < arrayLength(&directional_lights); i++) {
+		let light = directional_lights[i];
+		let l = -light.direction;
 		let v = normalize(camera.position - in.world_pos.xyz);
 		let r = distance(light.position, in.world_pos.xyz);
 		result += mix(diffuse(l, n), specular(l, v, n), object.metallic) * light.color * light.strength * (1.0 / (r * r + 1.0));
